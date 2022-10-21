@@ -16,38 +16,120 @@
  *  challenge: make it so that if two triangles meet at an edge, fragments on that edge are emitted by exactly one of the triangles
  *
  */
-function rasterize_triangle( va, vb, vc, emit_fragment ) {
-	//TODO: fill in this function
 
-	//This is a very bad placeholder implementation, just here so you see something by default.
-	//Don't actually do this!
-	//A good solution will loop over exactly the pixels that the triangle covers.
-	
-	//draw equally-spaced fragments in barycentric space:
-	for (let ai = 0; ai <= 5; ++ai) {
-		for (let bi = 0; bi + ai <= 5; ++bi) {
-			let ci = 5 - ai - bi;
+function cross(ab, xy){
+    return (ab.x * xy.y) - (ab.y * xy.x);
+}
 
-			//from integer barycentric coords to floating-point:
-			let a = ai / 5.0;
-			let b = bi / 5.0;
-			let c = ci / 5.0;
+function dot(a, b){
+    return a.x * b.x + a.y * b.y;
+}
 
-			//interpolate to get point in triangle:
-			const pt = {
-				x:a * va.x + b * vb.x + c * vc.x,
-				y:a * va.y + b * vb.y + c * vc.y
-			};
+function is_inside(ab, bc, ca){
+    return is_right_of(ab) && is_right_of(bc) && is_right_of(ca);
+}
 
-			//px is the pixel containing pt:
-			const px = {
-				x:Math.floor(pt.x),
-				y:Math.floor(pt.y)
-			};
+function is_right_of(edge){
+    return edge.cross_value > 0 || (edge.cross_value == 0 && edge.is_left_or_top);
+}
 
-			emit_fragment(px.x+0.5, px.y+0.5);
-		}
-	}
+function are_same(pt1, pt2){
+    return pt1.x === pt2.x && pt1.y == pt2.y;
+}
+
+function magnitude(p){
+    return Math.sqrt(p.x * p.x + p.y * p.y);
+}
+
+function sort_by_angle(a, b){
+    if (a.angle < b.angle){
+        return 1;
+    }
+    else if (a.angle > b.angle){
+        return -1;
+    }
+    else{
+        return 0;
+    }
+}
+
+function vector_subtract(va, vb){
+    return {x: va.x - vb.x, y: va.y - vb.y};
+}
+
+function get_angle_to_point(midpoint, point){
+    const midpoint_to_point = vector_subtract(point, midpoint);
+    const midpoint_to_point_magnitude = magnitude(midpoint_to_point);
+    const midpoint_to_point_norm = {x: midpoint_to_point.x / midpoint_to_point_magnitude, y: midpoint_to_point.y / midpoint_to_point_magnitude};
+    const right_vector = {x: 1, y: 0};
+
+    return Math.atan2(cross(right_vector, midpoint_to_point_norm), dot(right_vector, midpoint_to_point_norm));
+}
+
+
+function reorder_points(vm, va, vb, vc){
+    // get all angles from the midpoint to the points of the triangle
+    va.angle = get_angle_to_point(vm, va);
+    vb.angle = get_angle_to_point(vm, vb);
+    vc.angle = get_angle_to_point(vm, vc);
+
+    // sort the angles so we know angles is in the clockwise orientation.
+    return [va, vb, vc].sort(sort_by_angle);
+}
+
+function rasterize_triangle( va, vb, vc, color, emit_fragment ) {
+
+    // arrange points in clockwise order
+    const vm = {x: (va.x + vb.x + vc.x)/3.0, y: (va.y + vb.y + vc.y)/3.0};
+    const ordered_points = reorder_points(vm, va, vb, vc);
+    va = ordered_points[0];
+    vb = ordered_points[1];
+    vc = ordered_points[2];
+
+    // if we have a straight line, return
+    if (va.angle === vb.angle || va.angle === vc.angle || vb.angle === vc.angle){
+        console.log("points in a line... returning")
+        return;
+    }
+
+    // get range of points to loop over
+    const min_x = Math.floor(Math.min(va.x, vb.x, vc.x));
+    const max_x = Math.floor(Math.max(va.x, vb.x, vc.x));
+    const min_y = Math.floor(Math.min(va.y, vb.y, vc.y));
+    const max_y = Math.floor(Math.max(va.y, vb.y, vc.y));
+
+    const AB = vector_subtract(vb, va);
+    AB.is_left_or_top =  vc.x > vm.x || va.y === vb.y;
+
+    const BC = vector_subtract(vc, vb);
+    BC.is_left_or_top = va.x > vm.x && vb.y !== vc.y;
+
+    const CA = vector_subtract(va, vc);
+    CA.is_left_or_top = vb.x > vm.x;
+
+
+    // cycle through list of points, taking the cross product from the point vector with each vertice and the edge
+    // https://nerdparadise.com/math/pointinatriangle
+    for(let pixel_x = min_x + 0.5; pixel_x <= max_x + 0.5; ++pixel_x){
+        for(let pixel_y = min_y + 0.5; pixel_y <= max_y + 0.5; ++pixel_y){
+            const vp = {x: pixel_x, y: pixel_y};
+
+            const AP = vector_subtract(vp, va);
+            const BP = vector_subtract(vp, vb);
+            const CP = vector_subtract(vp, vc);
+
+            AB.cross_value = cross(AP, AB);
+            BC.cross_value = cross(BP, BC);
+            CA.cross_value = cross(CP, CA);
+
+            if (is_inside(AB, BC, CA)){
+                const key = Math.floor(pixel_x) + "." + Math.floor(pixel_y);
+                if (!(key in FRAGMENTS)){
+                    emit_fragment(pixel_x, pixel_y, color);
+                }
+            }
+        }
+    }
 }
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -127,19 +209,31 @@ let PX_SIZE = 10.0;
 const VERTEX_RADIUS = 0.1;
 
 let VERTICES = [
-	{x: 3.5, y: 4.5},
-	{x: 6.5, y: 2.5},
-	{x: 12.5, y: 2.5},
-	{x: 8.5, y: 7.5}
+	{x: 0.5, y: 0.5},
+	{x: 2.5, y: 0.5},
+	{x: 0.5, y: 2.5},
+	{x: 2.5, y: 2.5},
+	{x: 0.5, y: 5.5},
+	{x: 1.5, y: 4.5},
+	{x: 1.5, y: 6.5},
+
 ];
 let TRIANGLES = [
-	[0,1,2],
-	[0,2,3]
+
+	[3,1,0],
+    [0,3,2],
+    [4,5,6]
 ];
 VERTICES.dirty = true; //dirty flag controls whether rasterize gets called next draw()
 
 //fragments emitted by last rasterization:
 let FRAGMENTS = {};
+let TRIANGLE_COLORS = [
+    "#500",
+    "#050",
+    "#005"
+];
+let FRAGMENT_COLORS = {};
 
 let HOVERED_VERTEX = null; //reference to object in VERTICES
 let DRAGGING = null; //{vertex: , dx:, dy:} -- vertex + relative mouse position
@@ -242,7 +336,7 @@ function rasterize() {
 	//clear fragments:
 	FRAGMENTS = {};
 
-	function emit_fragment(x,y) {
+	function emit_fragment(x,y, c) {
 		if (Math.floor(x) + 0.5 != x || Math.floor(y) + 0.5 != y) {
 			console.warn(`emit_fragment called with ${x},${y}, which is not a pixel center.`);
 			return;
@@ -250,18 +344,21 @@ function rasterize() {
 		const key = Math.floor(x) + "." + Math.floor(y);
 		if (!(key in FRAGMENTS)) {
 			FRAGMENTS[key] = { x:x, y:y, count:1 };
+            FRAGMENT_COLORS[key] = c;
 		} else {
 			FRAGMENTS[key].count += 1;
 		}
 	}
-	
+
+    let count = 0;
 	for (let triangle of TRIANGLES) {
 		//make a copy so rasterize_triangle can't write vertex positions through sloppy coding:
 		const va = {x: VERTICES[triangle[0]].x, y: VERTICES[triangle[0]].y};
 		const vb = {x: VERTICES[triangle[1]].x, y: VERTICES[triangle[1]].y};
 		const vc = {x: VERTICES[triangle[2]].x, y: VERTICES[triangle[2]].y};
 
-		rasterize_triangle(va, vb, vc, emit_fragment);
+		rasterize_triangle(va, vb, vc, TRIANGLE_COLORS[count], emit_fragment);
+        count++;
 	}
 }
 
@@ -288,7 +385,7 @@ function draw() {
 		const fragment = FRAGMENTS[key];
 		const R = 0.5;
 		if (fragment.count == 1) {
-			CTX.fillStyle = '#888';
+			CTX.fillStyle = FRAGMENT_COLORS[key];
 		} else {
 			let amt = 1.0 - Math.pow(0.9, fragment.count);
 			let R = (1.0 - 0.5) * amt + 0.5;
