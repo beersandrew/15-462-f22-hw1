@@ -17,29 +17,141 @@
 *
 */
 function rasterize_line( va, vb, emit_fragment ) {
-	//TODO: fill in this function
 
-	//This is a very bad placeholder implementation, just here so you see something by default.
-	//Don't actually do this.
-	
-	//draw equally-spaced fragments along the line:
-	for (let i = 0; i <= 5; ++i) {
-		//amount to interpolate
-		const amt = i / 5.0;
-		//pt is linearly interpolated between va and vb:
-		const pt = {
-			x:(vb.x - va.x) * amt + va.x,
-			y:(vb.y - va.y) * amt + va.y
-		};
-		//px is the pixel containing pt:
-		const px = {
-			x:Math.floor(pt.x),
-			y:Math.floor(pt.y)
-		};
-		//emit fragment at px (+0.5 because emit_fragment wants pixel center)
-		emit_fragment(px.x+0.5, px.y+0.5);
-	}
+   if (Math.abs(vb.y - va.y) < Math.abs(vb.x - va.x)){
+       if (va.x > vb.x){
+           plot_line_low(vb.x, vb.y, va.x, va.y, emit_fragment);
+       }
+       else{
+           plot_line_low(va.x, va.y, vb.x, vb.y, emit_fragment);
+       }
+   }
+   else{
+       if (va.y > vb.y){
+           plot_line_high(vb.x, vb.y, va.x, va.y, emit_fragment);
+       }
+       else{
+           plot_line_high(va.x, va.y, vb.x, vb.y, emit_fragment);
+       }
+   }
 }
+
+function plot_line_low(x0, y0, x1, y1, emit_fragment){
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    let y_sign = 1;
+
+    if (dy < 0){
+        y_sign = -1;
+        dy = -dy;
+    }
+    let slope = dy / dx;
+
+    for (let x = Math.floor(x0) + 0.5; x <= Math.floor(x1)+0.5; ++x){
+        if (x == Math.floor(x0) + 0.5){
+            if (boundary_check_low(x0, y0, x, emit_fragment) ||
+                x0 > x){
+                continue;
+            }
+        }
+
+        if (x == Math.floor(x1) + 0.5){
+            if (boundary_check_low(x1, y1, x, emit_fragment) ||
+                x1 < x){
+                continue;
+            }
+        }
+
+        const y = slope * (x - x0) + (y0*y_sign);
+
+        const final_x = x;
+        const final_y = Math.abs(Math.floor(y) + 0.5);
+        const key = Math.floor(final_x) + "." + Math.floor(final_y);
+        if (!(key in FRAGMENTS)) {
+            emit_fragment(final_x, final_y);
+        }
+    }
+}
+
+function boundary_check_low(actual_x, actual_y, grid_x, emit_fragment){
+    const x_distance_from_center = Math.abs(actual_x - grid_x);
+    const y_distance_from_center = Math.abs(actual_y - (Math.floor(actual_y) + 0.5));
+
+    // https://stackoverflow.com/questions/27022064/detect-click-in-a-diamond
+    if (x_distance_from_center + y_distance_from_center <= 0.5){
+        const final_x = Math.floor(actual_x) + 0.5;
+        const final_y = Math.abs(Math.floor(actual_y) + 0.5);
+        const key = Math.floor(final_x) + "." + Math.floor(final_y);
+        if (!(key in FRAGMENTS)) {
+            emit_fragment(final_x, final_y);
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+function boundary_check_high(actual_x, actual_y, grid_y, emit_fragment){
+    const x_distance_from_center = Math.abs(actual_x - (Math.floor(actual_x) + 0.5));
+    const y_distance_from_center = Math.abs(actual_y - grid_y);
+
+    // https://stackoverflow.com/questions/27022064/detect-click-in-a-diamond
+    if (x_distance_from_center + y_distance_from_center <= 0.5){
+        const final_x = Math.floor(actual_x) + 0.5;
+        const final_y = Math.abs(Math.floor(actual_y) + 0.5)
+        const key = Math.floor(final_x) + "." + Math.floor(final_y);
+        if (!(key in FRAGMENTS)) {
+            emit_fragment(final_x, final_y);
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+function plot_line_high(x0, y0, x1, y1, emit_fragment){
+    let dx = x1 - x0;
+    const dy = y1 - y0;
+    let x_sign = 1;
+
+    if (dy < 0){
+        x_sign = -1;
+        dx = -dx;
+    }
+
+    let slope = dx / dy;
+
+
+    for (let y = Math.floor(y0) + 0.5; y <= Math.floor(y1)+0.5; ++y){
+        console.log("fragments: ", FRAGMENTS)
+        if (y == Math.floor(y0) + 0.5){
+            if (boundary_check_high(x0, y0, y, emit_fragment) ||
+                y0 > y){
+                continue;
+            }
+        }
+
+        if (y == Math.floor(y1) + 0.5){
+            if (boundary_check_high(x1, y1, y, emit_fragment) ||
+                y1 < y){
+                continue;
+            }
+        }
+
+        const x = slope * (y - y0) + (x0*x_sign);
+
+        const final_x = Math.abs(Math.floor(x) + 0.5);
+        const final_y = y;
+
+        const key = Math.floor(final_x) + "." + Math.floor(final_y);
+        if (!(key in FRAGMENTS)) {
+            emit_fragment(final_x, final_y);
+        }
+    }
+}
+
 </script>
 <style>
 html, body, h1, h2, p { padding: 0; margin: 0; }
@@ -116,8 +228,7 @@ const VERTEX_RADIUS = 0.1;
 
 let VERTICES = [
 	{x: 3.5, y: 3.5},
-	{x: 6.5, y: 4.5},
-	{x: 12.5, y: 2.5}
+	{x: 6.5, y: 4.5}
 ];
 VERTICES.dirty = true; //dirty flag controls whether rasterize gets called next draw()
 
@@ -224,6 +335,7 @@ function rasterize() {
 
 	//clear fragments:
 	FRAGMENTS = {};
+    console.log("Fragments reset")
 
 	function emit_fragment(x,y) {
 		if (Math.floor(x) + 0.5 != x || Math.floor(y) + 0.5 != y) {
@@ -234,6 +346,7 @@ function rasterize() {
 		if (!(key in FRAGMENTS)) {
 			FRAGMENTS[key] = { x:x, y:y, count:1 };
 		} else {
+            console.log("Duplicated!", key);
 			FRAGMENTS[key].count += 1;
 		}
 	}
@@ -320,12 +433,19 @@ function draw() {
 	//line vertices:
 	//TODO: nice circles at vertices!
 	const radius = VERTEX_RADIUS;
+    let count_of_vertices = 0;
 	for (let vertex of VERTICES) {
-		CTX.fillStyle = '#f88';
+        if (count_of_vertices == 0){
+            CTX.fillStyle = '#388';
+        }
+        else{
+            CTX.fillStyle = '#f8f';
+        }
 		if (vertex == HOVERED_VERTEX) {
 			CTX.fillStyle = '#ff8';
 		}
 		CTX.fillRect(vertex.x-radius, vertex.y-radius, 2*radius, 2*radius);
+        count_of_vertices++;
 	}
 
 	/*//DEBUG: mouse cursor
